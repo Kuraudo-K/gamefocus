@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <style>
+    :root { --bg:#f4f3fc; --ink:#30284a; --accent:#7259dc; --soft:#d9d2fa; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg:#211d32; --ink:#f3efff; --accent:#b4a1ff; --soft:#403663; }
+    }
+  </style>
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="var(--bg)"/>
+  <path d="M38 40h52c9 0 16 6 18 15l6 23c2 9-8 15-16 10L84 78H44L30 88c-8 5-18-1-16-10l6-23c2-9 9-15 18-15Z"
+        fill="var(--soft)" stroke="var(--ink)" stroke-width="5" stroke-linejoin="round"/>
+  <circle cx="45" cy="64" r="14" fill="var(--bg)" stroke="var(--accent)" stroke-width="4"/>
+  <path d="M45 55v18m-9-9h18" stroke="var(--ink)" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="86" cy="59" r="4" fill="var(--accent)"/>
+  <circle cx="96" cy="69" r="4" fill="var(--accent)"/>
+  <circle cx="76" cy="69" r="4" fill="var(--accent)"/>
+  <circle cx="86" cy="79" r="4" fill="var(--accent)"/>
+  <path d="m62 51 12 13-12 13Z" fill="var(--accent)" stroke="var(--ink)" stroke-width="3" stroke-linejoin="round"/>
+</svg>

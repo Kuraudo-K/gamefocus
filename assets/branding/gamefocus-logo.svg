@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 260">
+  <defs>
+    <linearGradient id="gf" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#00dcff"/>
+      <stop offset=".5" stop-color="#278bff"/>
+      <stop offset="1" stop-color="#a52bff"/>
+    </linearGradient>
+    <!-- Au-dessus du trait haut de la manette (y=88, stroke 8 → bord ~84) -->
+    <clipPath id="abovePad">
+      <rect x="0" y="0" width="1000" height="84"/>
+    </clipPath>
+  </defs>
+
+  <path d="M85 120 A100 100 0 0 1 285 120"
+        fill="none" stroke="url(#gf)" stroke-width="10"
+        stroke-linecap="round"/>
+
+  <!-- Aiguille modèle, clipée : ne traverse pas la manette -->
+  <path d="M185 110 L260 55"
+        stroke="#ffffff" stroke-width="10" stroke-linecap="round"
+        clip-path="url(#abovePad)"/>
+
+  <!-- Manette (fond + trait) par-dessus -->
+  <path d="M105 113 Q112 88 139 88 H231
+    Q258 88 265 113 L283 169 Q290 195 264 193
+    L228 168 H142 L106 193 Q80 195 87 169 Z"
+    fill="#17243a" stroke="url(#gf)" stroke-width="8"
+    stroke-linejoin="round"/>
+
+  <!-- Antennes v1 plus bas, au-dessus de l’aiguille -->
+  <path d="M103 72 L116 82 M255 72 L242 82"
+        fill="none" stroke="url(#gf)" stroke-width="8"
+        stroke-linecap="round"/>
+
+  <path d="M119 133 H159 M139 113 V153"
+        stroke="#ffffff" stroke-width="10"
+        stroke-linecap="round"/>
+
+  <g fill="url(#gf)">
+    <circle cx="235" cy="123" r="8"/>
+    <circle cx="251" cy="140" r="8"/>
+    <circle cx="235" cy="157" r="8"/>
+    <circle cx="219" cy="140" r="8"/>
+  </g>
+
+  <circle cx="187" cy="140" r="27"
+          fill="#17243a" stroke="url(#gf)" stroke-width="7"/>
+  <circle cx="187" cy="140" r="6" fill="#00dcff"/>
+  <path d="M187 126 V154 M173 140 H201"
+        stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+
+  <text x="310" y="158" font-family="Arial,sans-serif"
+    font-size="112" font-weight="900" letter-spacing="-5"
+    stroke="#0a0e14" stroke-width="10" paint-order="stroke fill"
+    fill="#f0f5ff">Game<tspan fill="url(#gf)" stroke="none">Focus</tspan></text>
+
+  <path d="M312 182 H960" stroke="url(#gf)" stroke-width="4"
+    stroke-linecap="round"/>
+</svg>

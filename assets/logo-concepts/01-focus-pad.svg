@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <style>
+    :root { --bg:#eef7f6; --ink:#15373b; --accent:#159b8c; --soft:#bce9e2; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg:#142326; --ink:#e7f5f2; --accent:#48d2bd; --soft:#245c57; }
+    }
+  </style>
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="var(--bg)"/>
+  <path d="M37 43h54c8 0 14 6 16 14l6 24c2 9-8 15-15 9L86 80H42L30 90c-7 6-17 0-15-9l6-24c2-8 8-14 16-14Z"
+        fill="var(--soft)" stroke="var(--ink)" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M39 57v16M31 65h16" stroke="var(--ink)" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="87" cy="61" r="4" fill="var(--accent)"/>
+  <circle cx="96" cy="70" r="4" fill="var(--accent)"/>
+  <circle cx="78" cy="70" r="4" fill="var(--accent)"/>
+  <circle cx="87" cy="79" r="4" fill="var(--accent)"/>
+  <circle cx="64" cy="63" r="13" fill="var(--bg)" stroke="var(--accent)" stroke-width="5"/>
+  <circle cx="64" cy="63" r="4" fill="var(--ink)"/>
+</svg>

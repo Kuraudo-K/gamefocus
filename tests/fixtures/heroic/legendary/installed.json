@@ -1,0 +1,11 @@
+{
+  "Cyberpunk2077": {
+    "title": "Cyberpunk 2077 (Heroic)",
+    "install_path": "/games/CP2077",
+    "app_id": 1091500
+  },
+  "Celeste": {
+    "title": "Celeste",
+    "install_path": "/games/Celeste"
+  }
+}

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=GameFocus
+Comment=Bibliothèque de jeux et mode Focus
+Exec=gamefocus
+Icon=gamefocus
+Terminal=false
+Categories=Game;
+StartupWMClass=com.gamefocus.GameFocus

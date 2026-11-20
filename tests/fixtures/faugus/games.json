@@ -1,0 +1,4 @@
+[
+  {"title": "Soulframe", "path": "/games/sf.exe", "hidden": false, "category": false},
+  {"title": "Hidden Game", "path": "/x", "hidden": true, "category": false}
+]
