@@ -101,12 +101,101 @@ impl Default for LaunchTweaks {
     }
 }
 
+/// Bureau détecté pour choisir la recette HDR (GNOME ≠ KDE).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DesktopKind {
+    Gnome,
+    Kde,
+    Other,
+}
+
+/// Lit `XDG_CURRENT_DESKTOP` / `DESKTOP_SESSION` (ex. `KDE`, `GNOME`, `ubuntu:GNOME`).
+pub fn detect_desktop() -> DesktopKind {
+    detect_desktop_from(
+        std::env::var("XDG_CURRENT_DESKTOP").ok().as_deref(),
+        std::env::var("DESKTOP_SESSION").ok().as_deref(),
+    )
+}
+
+pub fn detect_desktop_from(
+    xdg_current_desktop: Option<&str>,
+    desktop_session: Option<&str>,
+) -> DesktopKind {
+    let blob = format!(
+        "{}:{}",
+        xdg_current_desktop.unwrap_or(""),
+        desktop_session.unwrap_or("")
+    )
+    .to_lowercase();
+    if blob.split(&[':', ';', ','][..]).any(|part| {
+        let p = part.trim();
+        p == "gnome" || p.starts_with("gnome-") || p.ends_with("-gnome")
+    }) {
+        return DesktopKind::Gnome;
+    }
+    if blob.split(&[':', ';', ','][..]).any(|part| {
+        let p = part.trim();
+        p == "kde" || p == "plasma" || p.starts_with("plasma") || p.contains("plasma")
+    }) || blob.contains("kde")
+    {
+        return DesktopKind::Kde;
+    }
+    DesktopKind::Other
+}
+
+/// Tokens HDR selon le DE (sans HDR bureau).
+/// - GNOME : Wayland Proton + HDR (gamescope souvent cassé / lavé)
+/// - KDE / autre : DXVK_HDR + gamescope --hdr-enabled
+pub fn hdr_launch_tokens(desktop: DesktopKind) -> &'static [&'static str] {
+    match desktop {
+        DesktopKind::Gnome => &[
+            "PROTON_ENABLE_WAYLAND=1",
+            "PROTON_ENABLE_HDR=1",
+            "DXVK_HDR=1",
+        ],
+        DesktopKind::Kde | DesktopKind::Other => &["DXVK_HDR=1", "gamescope -f --hdr-enabled --"],
+    }
+}
+
+fn strip_managed_hdr_tokens(command: &str) -> String {
+    let mut out = Vec::new();
+    let mut tokens = command.split_whitespace().peekable();
+    while let Some(token) = tokens.next() {
+        match token {
+            "DXVK_HDR=1" | "PROTON_ENABLE_HDR=1" | "PROTON_ENABLE_WAYLAND=1" => {}
+            "gamescope" => {
+                // Retire `gamescope -f --hdr-enabled --` (recette KDE gérée).
+                let mut look = Vec::new();
+                while look.len() < 3 {
+                    if let Some(next) = tokens.peek().copied() {
+                        look.push(next);
+                        tokens.next();
+                    } else {
+                        break;
+                    }
+                }
+                if look.as_slice() == ["-f", "--hdr-enabled", "--"] {
+                    continue;
+                }
+                out.push(token.to_string());
+                out.extend(look.into_iter().map(str::to_string));
+            }
+            other => out.push(other.to_string()),
+        }
+    }
+    out.join(" ")
+}
+
 impl LaunchTweaks {
     /// Préfixe d’env à coller devant `%command%` (sans wrappers mangohud…).
     pub fn env_prefix(&self) -> String {
+        self.env_prefix_for(detect_desktop())
+    }
+
+    pub fn env_prefix_for(&self, desktop: DesktopKind) -> String {
         let mut parts = Vec::new();
         if self.hdr {
-            parts.push("DXVK_HDR=1");
+            parts.extend(hdr_launch_tokens(desktop).iter().copied());
         }
         if self.proton_log {
             parts.push("PROTON_LOG=1");
@@ -114,20 +203,31 @@ impl LaunchTweaks {
         if self.fsr {
             parts.push("FSR4_UPGRADE=1");
         }
-        if self.hdr {
-            // Gamescope = HDR jeu sans HDR bureau (évite le lavé KDE/GNOME).
-            parts.push("gamescope -f --hdr-enabled --");
-        }
         parts.join(" ")
     }
 
     /// Fusionne le préfixe tweaks dans une commande existante.
-    /// N’ajoute que les variables / wrappers absents (évite les doublons HDR / FSR / log).
     pub fn merge_into_command(&self, command: &str) -> String {
-        let cmd = command.trim();
+        self.merge_into_command_for(command, detect_desktop())
+    }
+
+    /// Comme `merge_into_command`, avec un DE explicite (tests / UI).
+    pub fn merge_into_command_for(&self, command: &str, desktop: DesktopKind) -> String {
+        let mut cmd = command.trim().to_string();
+        if self.hdr {
+            cmd = strip_managed_hdr_tokens(&cmd);
+        }
         let mut missing = Vec::new();
-        if self.hdr && !cmd.contains("DXVK_HDR=1") {
-            missing.push("DXVK_HDR=1");
+        if self.hdr {
+            for token in hdr_launch_tokens(desktop) {
+                if *token == "gamescope -f --hdr-enabled --" {
+                    if !cmd.contains("--hdr-enabled") {
+                        missing.push(*token);
+                    }
+                } else if !cmd.split_whitespace().any(|t| t == *token) {
+                    missing.push(*token);
+                }
+            }
         }
         if self.proton_log && !cmd.contains("PROTON_LOG=1") {
             missing.push("PROTON_LOG=1");
@@ -135,15 +235,11 @@ impl LaunchTweaks {
         if self.fsr && !cmd.contains("FSR4_UPGRADE=1") {
             missing.push("FSR4_UPGRADE=1");
         }
-        // Gamescope après les env, avant le reste (sans HDR bureau).
-        if self.hdr && !cmd.contains("--hdr-enabled") {
-            missing.push("gamescope -f --hdr-enabled --");
-        }
         if missing.is_empty() {
             return if cmd.is_empty() {
                 String::new()
             } else {
-                cmd.to_string()
+                cmd
             };
         }
         let prefix = missing.join(" ");
@@ -217,16 +313,56 @@ mod tests {
     }
 
     #[test]
-    fn merge_hdr_into_command() {
+    fn detect_desktop_from_xdg() {
+        assert_eq!(
+            detect_desktop_from(Some("ubuntu:GNOME"), None),
+            DesktopKind::Gnome
+        );
+        assert_eq!(
+            detect_desktop_from(Some("KDE"), Some("plasma")),
+            DesktopKind::Kde
+        );
+        assert_eq!(detect_desktop_from(Some("Hyprland"), None), DesktopKind::Other);
+    }
+
+    #[test]
+    fn merge_hdr_kde_uses_gamescope() {
         let t = LaunchTweaks {
             hdr: true,
             ..LaunchTweaks::default()
         };
-        let c = t.merge_into_command("mangohud %command%");
-        assert!(c.starts_with("DXVK_HDR=1"));
+        let c = t.merge_into_command_for("mangohud %command%", DesktopKind::Kde);
+        assert!(c.contains("DXVK_HDR=1"));
         assert!(c.contains("gamescope -f --hdr-enabled --"));
         assert!(c.contains("mangohud"));
         assert!(!c.contains("PROTON_ENABLE_WAYLAND"));
+    }
+
+    #[test]
+    fn merge_hdr_gnome_uses_wayland_proton() {
+        let t = LaunchTweaks {
+            hdr: true,
+            ..LaunchTweaks::default()
+        };
+        let c = t.merge_into_command_for("mangohud %command%", DesktopKind::Gnome);
+        assert!(c.contains("PROTON_ENABLE_WAYLAND=1"));
+        assert!(c.contains("PROTON_ENABLE_HDR=1"));
+        assert!(c.contains("DXVK_HDR=1"));
+        assert!(!c.contains("gamescope"));
+        assert!(c.contains("mangohud"));
+    }
+
+    #[test]
+    fn merge_hdr_switches_recipe_when_desktop_changes() {
+        let t = LaunchTweaks {
+            hdr: true,
+            ..LaunchTweaks::default()
+        };
+        let kde = t.merge_into_command_for("%command%", DesktopKind::Kde);
+        let gnome = t.merge_into_command_for(&kde, DesktopKind::Gnome);
+        assert!(!gnome.contains("gamescope"));
+        assert!(gnome.contains("PROTON_ENABLE_WAYLAND=1"));
+        assert_eq!(gnome.matches("DXVK_HDR=1").count(), 1);
     }
 
     #[test]
@@ -238,7 +374,7 @@ mod tests {
             ..LaunchTweaks::default()
         };
         let base = "DXVK_HDR=1 gamescope -f --hdr-enabled -- mangohud %command%";
-        let c = t.merge_into_command(base);
+        let c = t.merge_into_command_for(base, DesktopKind::Kde);
         assert_eq!(c.matches("DXVK_HDR=1").count(), 1);
         assert_eq!(c.matches("--hdr-enabled").count(), 1);
         assert!(c.contains("FSR4_UPGRADE=1"));

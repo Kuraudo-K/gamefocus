@@ -229,15 +229,24 @@ impl GameFocusApp {
                             .show(ui, |ui| {
                                 widgets::on_off_row(
                                     ui,
-                                    "HDR (gamescope, sans HDR bureau)",
+                                    "HDR (selon le bureau)",
                                     &mut self.config.launch.hdr,
                                 );
+                                let hdr_hint = match crate::domain::detect_desktop() {
+                                    crate::domain::DesktopKind::Gnome => {
+                                        "GNOME : PROTON_ENABLE_WAYLAND=1 PROTON_ENABLE_HDR=1 DXVK_HDR=1"
+                                    }
+                                    crate::domain::DesktopKind::Kde => {
+                                        "KDE : DXVK_HDR=1 + gamescope -f --hdr-enabled"
+                                    }
+                                    crate::domain::DesktopKind::Other => {
+                                        "Autre DE : DXVK_HDR=1 + gamescope -f --hdr-enabled"
+                                    }
+                                };
                                 ui.label(
-                                    egui::RichText::new(
-                                        "Ajoute DXVK_HDR=1 + gamescope -f --hdr-enabled — pas besoin du HDR Plasma/GNOME.",
-                                    )
-                                    .small()
-                                    .color(theme::muted()),
+                                    egui::RichText::new(hdr_hint)
+                                        .small()
+                                        .color(theme::muted()),
                                 );
                                 ui.separator();
                                 widgets::on_off_row(

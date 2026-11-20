@@ -6,7 +6,10 @@ pub mod game;
 pub mod launch;
 pub mod proton;
 
-pub use config::{AppConfig, LaunchTweaks, ThemeMode};
+pub use config::{
+    detect_desktop, detect_desktop_from, hdr_launch_tokens, AppConfig, DesktopKind, LaunchTweaks,
+    ThemeMode,
+};
 pub use focus::{
     aggressive_extra_targets, is_critical_process, process_name_matches, select_focus_targets,
     wallpaper_process_names, FocusAction, FocusRules, FocusSession, FocusSnapshot,
