@@ -5,6 +5,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use egui::{Color32, Stroke, Vec2};
 
+use crate::domain::{detect_desktop, DesktopKind};
+
 static DARK: AtomicBool = AtomicBool::new(true);
 
 pub(super) fn set_dark(dark: bool) {
@@ -107,18 +109,21 @@ pub(super) fn apply_theme(ctx: &egui::Context, dark: bool) {
 }
 
 /// Détecte le thème clair/sombre du bureau.
-/// Ordre : portail XDG → KDE Plasma → gsettings (GNOME) → GTK_THEME.
+/// Portail XDG d'abord (1/2) ; sinon uniquement le DE actif — un vieux
+/// `~/.config/kdeglobals` ne doit pas écraser GNOME (et l'inverse).
 pub(super) fn system_prefers_dark() -> Option<bool> {
     if let Some(dark) = portal_prefers_dark() {
         return Some(dark);
     }
-    if let Some(dark) = kde_prefers_dark() {
-        return Some(dark);
+    match detect_desktop() {
+        DesktopKind::Gnome => gnome_prefers_dark()
+            .or_else(gtk_theme_prefers_dark),
+        DesktopKind::Kde => kde_prefers_dark()
+            .or_else(gtk_theme_prefers_dark),
+        DesktopKind::Other => kde_prefers_dark()
+            .or_else(gnome_prefers_dark)
+            .or_else(gtk_theme_prefers_dark),
     }
-    if let Some(dark) = gnome_prefers_dark() {
-        return Some(dark);
-    }
-    gtk_theme_prefers_dark()
 }
 
 fn portal_prefers_dark() -> Option<bool> {
