@@ -1,32 +1,62 @@
 # GameFocus
 
-Application Rust légère pour Linux (NixOS / GLF-OS) : bibliothèque de jeux multi-launcher + suggestions ProtonDB / options de lancement, et **mode Focus** (gèle navigateur / wallpapers, garde Discord, Steam et l’audio).
+Bibliothèque de jeux multi-launcher + mode Focus pour Linux (NixOS / GLF-OS).
 
-Launchers supportés : **Steam**, **Heroic**, **Faugus**, **Lutris**.
+Launchers : **Steam**, **Heroic**, **Faugus**, **Lutris**.
 
-## NixOS (customConfig GLF)
+## Install — GLF-OS / customConfig (npins)
 
-1. Copie `packaging/gamefocus.nix` → `/etc/nixos/customConfig/apps/gamefocus.nix`
-2. Dans `customConfig/default.nix` : `./apps/gamefocus.nix`
-3. `sudo nixos-rebuild switch` (ou `glf-update`)
+1. **Pin** — dans `customConfig/system/verify-sources.nix`, ajoute dans `expectedPins` :
 
-Pour un nouveau commit GitHub, mets à jour `rev` + `hash` :
+```nix
+{ name = "gamefocus"; addArgs = "github Kuraudo-K gamefocus --branch main"; }
+```
+
+2. **Source** — dans `customConfig/system/sources.nix` :
+
+```nix
+gamefocus = sources.gamefocus or null;
+```
+
+3. **Module** — copie `packaging/gamefocus-npins.nix` vers :
+
+```text
+/etc/nixos/customConfig/apps/gamefocus.nix
+```
+
+4. **Import** — dans `customConfig/default.nix` :
+
+```nix
+./apps/gamefocus.nix
+```
+
+5. **Télécharge le pin + rebuild** :
+
+```bash
+glf-sha
+# ou : cd /etc/nixos/customConfig && npins add github Kuraudo-K gamefocus --branch main
+sudo nixos-rebuild switch   # ou glf-update
+```
+
+Mise à jour plus tard : `glf-sha` puis rebuild.
+
+## Install — NixOS sans npins
+
+1. Copie `packaging/gamefocus.nix` → ton module (ex. `apps/gamefocus.nix`)
+2. Importe-le dans ta config
+3. Rebuild
+
+Après un nouveau commit GitHub, mets à jour `rev` + `hash` dans ce fichier :
 
 ```bash
 nix-shell -p nix-prefetch-github --run \
   'nix-prefetch-github Kuraudo-K gamefocus --rev main'
 ```
 
-### Dev shell (optionnel)
+## Dev / build local
 
 ```bash
 nix-shell          # ou : nix develop
-cargo build --release
-```
-
-## Build classique (hors Nix)
-
-```bash
 cargo build --release
 ./target/release/gamefocus
 ```
@@ -34,8 +64,6 @@ cargo build --release
 ## Tests
 
 ```bash
-nix develop -c cargo test --all-targets
-# ou
 cargo test --all-targets
 ```
 
@@ -49,11 +77,7 @@ gamefocus --focus-off     Quitte le Focus
 gamefocus --demo          Cycle Focus dry-run
 ```
 
-Variables utiles : `GAMEFOCUS_DRY_RUN=1`, `GAMEFOCUS_DEMO=1`.
-
-## Architecture
-
-Hexagonale (domaine / ports / application / adapters) — le domaine ne dépend pas d’`eframe`, `ureq` ni `sysinfo`.
+Variables : `GAMEFOCUS_DRY_RUN=1`, `GAMEFOCUS_DEMO=1`.
 
 ## Licence
 
