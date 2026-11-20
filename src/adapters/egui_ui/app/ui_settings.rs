@@ -234,7 +234,7 @@ impl GameFocusApp {
                                 );
                                 let hdr_hint = match crate::domain::detect_desktop() {
                                     crate::domain::DesktopKind::Gnome => {
-                                        "GNOME : PROTON_ENABLE_HDR=1 DXVK_HDR=1 (comme avant)"
+                                        "GNOME : PROTON_ENABLE_WAYLAND=1 PROTON_FORCE_HDR=1 DXVK_HDR=1"
                                     }
                                     crate::domain::DesktopKind::Kde => {
                                         "KDE : DXVK_HDR=1 + gamescope -f --hdr-enabled"

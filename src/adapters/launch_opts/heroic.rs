@@ -176,14 +176,21 @@ fn merge_heroic_entry(entry: &mut Value, requested: &str) -> Result<(String, Vec
                     env.push(json!({ "key": name, "value": value }));
                     managed.push(token.to_string());
                 }
-                if (name == "DXVK_HDR" || name == "PROTON_ENABLE_HDR") && value == "1"
+                if (name == "DXVK_HDR"
+                    || name == "PROTON_ENABLE_HDR"
+                    || name == "PROTON_FORCE_HDR"
+                    || name == "WAYLANDDRV_FORCE_HDR")
+                    && value == "1"
                     && entry.get("enableHDR").and_then(Value::as_bool) != Some(true)
                 {
                     entry.insert("enableHDR".into(), json!(true));
                 }
-                if name == "PROTON_ENABLE_WAYLAND" && value == "1"
+                if (name == "PROTON_ENABLE_WAYLAND" || name == "PROTON_FORCE_HDR")
+                    && value == "1"
                     && entry.get("enableWineWayland").and_then(Value::as_bool) != Some(true)
                 {
+                    // FORCE_HDR n’a de sens qu’avec Wine-Wayland (Heroic n’envoie
+                    // PROTON_ENABLE_HDR qu’avec enableWineWayland).
                     entry.insert("enableWineWayland".into(), json!(true));
                 }
             }
@@ -290,14 +297,25 @@ fn clear_heroic_entry(entry: &mut Value, managed: &[String]) -> Result<bool, Str
             }
         }
     }
-    if managed.iter().any(|token| token.as_str() == "DXVK_HDR=1" || token.as_str() == "PROTON_ENABLE_HDR=1")
-        && entry.get("enableHDR").and_then(Value::as_bool) == Some(true)
+    if managed.iter().any(|token| {
+        matches!(
+            token.as_str(),
+            "DXVK_HDR=1"
+                | "PROTON_ENABLE_HDR=1"
+                | "PROTON_FORCE_HDR=1"
+                | "WAYLANDDRV_FORCE_HDR=1"
+        )
+    }) && entry.get("enableHDR").and_then(Value::as_bool) == Some(true)
     {
         entry.insert("enableHDR".into(), json!(false));
         changed = true;
     }
-    if managed.iter().any(|token| token.as_str() == "PROTON_ENABLE_WAYLAND=1")
-        && entry.get("enableWineWayland").and_then(Value::as_bool) == Some(true)
+    if managed.iter().any(|token| {
+        matches!(
+            token.as_str(),
+            "PROTON_ENABLE_WAYLAND=1" | "PROTON_FORCE_HDR=1"
+        )
+    }) && entry.get("enableWineWayland").and_then(Value::as_bool) == Some(true)
     {
         entry.insert("enableWineWayland".into(), json!(false));
         changed = true;
@@ -592,5 +610,29 @@ mod tests {
             .get("enviromentOptions")
             .and_then(Value::as_array)
             .is_none_or(|env| env.is_empty()));
+    }
+
+    #[test]
+    fn heroic_maps_gnome_force_hdr_to_wayland_toggles() {
+        let mut entry = json!({
+            "appName": "Cyberpunk",
+            "wrapperOptions": [],
+            "enviromentOptions": [],
+            "enableHDR": false,
+            "enableWineWayland": false
+        });
+        let (_merged, managed) = merge_heroic_entry(
+            &mut entry,
+            "PROTON_ENABLE_WAYLAND=1 PROTON_FORCE_HDR=1 DXVK_HDR=1 %command%",
+        )
+        .unwrap();
+        assert!(entry["enableWineWayland"].as_bool().unwrap());
+        assert!(entry["enableHDR"].as_bool().unwrap());
+        assert!(managed.iter().any(|t| t == "PROTON_FORCE_HDR=1"));
+        assert!(entry["enviromentOptions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item.get("key").and_then(Value::as_str) == Some("PROTON_FORCE_HDR")));
     }
 }

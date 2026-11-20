@@ -144,11 +144,17 @@ pub fn detect_desktop_from(
 }
 
 /// Tokens HDR selon le DE (sans HDR bureau).
-/// - GNOME : recette d’origine qui marchait (`PROTON_ENABLE_HDR` + `DXVK_HDR`)
+/// - GNOME : Wine-Wayland + `PROTON_FORCE_HDR` — Proton-GE-GLF récent ignore
+///   `PROTON_ENABLE_HDR` si Mutter est en SDR (`color-mode=0`) et coupe même
+///   `DXVK_HDR` dans certains cas ; `FORCE_HDR` annonce le HDR au jeu.
 /// - KDE / autre : gamescope (chemin validé sur Plasma)
 pub fn hdr_launch_tokens(desktop: DesktopKind) -> &'static [&'static str] {
     match desktop {
-        DesktopKind::Gnome => &["PROTON_ENABLE_HDR=1", "DXVK_HDR=1"],
+        DesktopKind::Gnome => &[
+            "PROTON_ENABLE_WAYLAND=1",
+            "PROTON_FORCE_HDR=1",
+            "DXVK_HDR=1",
+        ],
         DesktopKind::Kde | DesktopKind::Other => &["DXVK_HDR=1", "gamescope -f --hdr-enabled --"],
     }
 }
@@ -158,7 +164,12 @@ fn strip_managed_hdr_tokens(command: &str) -> String {
     let mut tokens = command.split_whitespace().peekable();
     while let Some(token) = tokens.next() {
         match token {
-            "DXVK_HDR=1" | "PROTON_ENABLE_HDR=1" | "PROTON_ENABLE_WAYLAND=1" => {}
+            "DXVK_HDR=1"
+            | "PROTON_ENABLE_HDR=1"
+            | "PROTON_FORCE_HDR=1"
+            | "PROTON_ENABLE_WAYLAND=1"
+            | "WAYLANDDRV_FORCE_HDR=1"
+            | "DXVK_NO_HDR=1" => {}
             "gamescope" => {
                 // Retire `gamescope -f --hdr-enabled --` (recette KDE gérée).
                 let mut look = Vec::new();
@@ -335,15 +346,15 @@ mod tests {
     }
 
     #[test]
-    fn merge_hdr_gnome_uses_original_proton_vars() {
+    fn merge_hdr_gnome_uses_force_hdr_wayland() {
         let t = LaunchTweaks {
             hdr: true,
             ..LaunchTweaks::default()
         };
         let c = t.merge_into_command_for("mangohud %command%", DesktopKind::Gnome);
-        assert!(c.contains("PROTON_ENABLE_HDR=1"));
+        assert!(c.contains("PROTON_ENABLE_WAYLAND=1"));
+        assert!(c.contains("PROTON_FORCE_HDR=1"));
         assert!(c.contains("DXVK_HDR=1"));
-        assert!(!c.contains("PROTON_ENABLE_WAYLAND"));
         assert!(!c.contains("gamescope"));
         assert!(c.contains("mangohud"));
     }
@@ -357,8 +368,8 @@ mod tests {
         let kde = t.merge_into_command_for("%command%", DesktopKind::Kde);
         let gnome = t.merge_into_command_for(&kde, DesktopKind::Gnome);
         assert!(!gnome.contains("gamescope"));
-        assert!(gnome.contains("PROTON_ENABLE_HDR=1"));
-        assert!(!gnome.contains("PROTON_ENABLE_WAYLAND"));
+        assert!(gnome.contains("PROTON_FORCE_HDR=1"));
+        assert!(gnome.contains("PROTON_ENABLE_WAYLAND=1"));
         assert_eq!(gnome.matches("DXVK_HDR=1").count(), 1);
     }
 
