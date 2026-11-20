@@ -4,59 +4,33 @@ Application Rust légère pour Linux (NixOS / GLF-OS) : bibliothèque de jeux mu
 
 Launchers supportés : **Steam**, **Heroic**, **Faugus**, **Lutris**.
 
-## Nix / NixOS
+## NixOS (customConfig GLF)
 
-### Dev shell
+Comme Lunii / Hytale : un fichier `.nix` qui tire le dépôt GitHub.
 
-```bash
-nix develop
-cargo run
-# ou
-cargo build --release && ./target/release/gamefocus
-```
-
-Sans flake :
+1. Pousse ce repo sur GitHub (`Kuraudo-K/gamefocus`)
+2. Copie `packaging/gamefocus.nix` → `/etc/nixos/customConfig/apps/gamefocus.nix`
+3. Mets le `rev` + `hash` :
 
 ```bash
-nix-shell
-cargo build --release
+nix-shell -p nix-prefetch-github --run \
+  'nix-prefetch-github Kuraudo-K gamefocus --rev main'
 ```
 
-### Installer / lancer le paquet
-
-```bash
-# build
-nix build
-
-# lancer
-nix run
-
-# ou installer dans le profil
-nix profile install .#default
-```
-
-### Ajouter à ta config NixOS (exemple)
+4. Dans `customConfig/default.nix` :
 
 ```nix
-# flake.nix
-{
-  inputs.gamefocus.url = "github:Kuraudo-K/gamefocus";
-  # ...
-  outputs = { nixpkgs, gamefocus, ... }: {
-    nixosConfigurations.tonpc = nixpkgs.lib.nixosSystem {
-      modules = [
-        ({ pkgs, ... }: {
-          environment.systemPackages = [
-            gamefocus.packages.${pkgs.system}.default
-          ];
-        })
-      ];
-    };
-  };
-}
+./apps/gamefocus.nix
 ```
 
-Le binaire est wrappé avec `LD_LIBRARY_PATH` (Wayland / X11 / GL) pour egui.
+5. `sudo nixos-rebuild switch` (ou `glf-update`)
+
+### Dev shell (optionnel)
+
+```bash
+nix-shell          # ou : nix develop
+cargo build --release
+```
 
 ## Build classique (hors Nix)
 
