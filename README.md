@@ -6,24 +6,16 @@ Launchers supportés : **Steam**, **Heroic**, **Faugus**, **Lutris**.
 
 ## NixOS (customConfig GLF)
 
-Comme Lunii / Hytale : un fichier `.nix` qui tire le dépôt GitHub.
+1. Copie `packaging/gamefocus.nix` → `/etc/nixos/customConfig/apps/gamefocus.nix`
+2. Dans `customConfig/default.nix` : `./apps/gamefocus.nix`
+3. `sudo nixos-rebuild switch` (ou `glf-update`)
 
-1. Pousse ce repo sur GitHub (`Kuraudo-K/gamefocus`)
-2. Copie `packaging/gamefocus.nix` → `/etc/nixos/customConfig/apps/gamefocus.nix`
-3. Mets le `rev` + `hash` :
+Pour un nouveau commit GitHub, mets à jour `rev` + `hash` :
 
 ```bash
 nix-shell -p nix-prefetch-github --run \
   'nix-prefetch-github Kuraudo-K gamefocus --rev main'
 ```
-
-4. Dans `customConfig/default.nix` :
-
-```nix
-./apps/gamefocus.nix
-```
-
-5. `sudo nixos-rebuild switch` (ou `glf-update`)
 
 ### Dev shell (optionnel)
 

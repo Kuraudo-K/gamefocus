@@ -1,11 +1,3 @@
-# GameFocus — à copier dans /etc/nixos/customConfig/apps/gamefocus.nix
-# puis activer dans customConfig/default.nix :
-#   ./apps/gamefocus.nix
-#
-# Après push GitHub, mets à jour rev + hash :
-#   nix-shell -p nix-prefetch-github --run \
-#     'nix-prefetch-github Kuraudo-K gamefocus --rev main'
-
 { pkgs, lib, ... }:
 
 let
