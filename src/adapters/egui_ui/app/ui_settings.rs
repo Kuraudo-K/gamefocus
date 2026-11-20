@@ -234,12 +234,12 @@ impl GameFocusApp {
                             .show(ui, |ui| {
                                 widgets::on_off_row(
                                     ui,
-                                    "HDR (Wayland + Proton/DXVK)",
+                                    "HDR (gamescope, sans HDR bureau)",
                                     &mut self.config.launch.hdr,
                                 );
                                 ui.label(
                                     egui::RichText::new(
-                                        "KDE : active HDR sur l’écran jeu + SDR max ~200–250 nits.",
+                                        "Ajoute DXVK_HDR=1 + gamescope -f --hdr-enabled — pas besoin du HDR Plasma/GNOME.",
                                     )
                                     .small()
                                     .color(theme::muted()),

@@ -106,9 +106,6 @@ impl LaunchTweaks {
     pub fn env_prefix(&self) -> String {
         let mut parts = Vec::new();
         if self.hdr {
-            // Wayland natif requis hors gamescope (surtout KDE / Proton-GE).
-            parts.push("PROTON_ENABLE_WAYLAND=1");
-            parts.push("PROTON_ENABLE_HDR=1");
             parts.push("DXVK_HDR=1");
         }
         if self.proton_log {
@@ -117,30 +114,30 @@ impl LaunchTweaks {
         if self.fsr {
             parts.push("FSR4_UPGRADE=1");
         }
+        if self.hdr {
+            // Gamescope = HDR jeu sans HDR bureau (évite le lavé KDE/GNOME).
+            parts.push("gamescope -f --hdr-enabled --");
+        }
         parts.join(" ")
     }
 
     /// Fusionne le préfixe tweaks dans une commande existante.
-    /// N’ajoute que les variables absentes (évite les doublons HDR / FSR / log).
+    /// N’ajoute que les variables / wrappers absents (évite les doublons HDR / FSR / log).
     pub fn merge_into_command(&self, command: &str) -> String {
         let cmd = command.trim();
         let mut missing = Vec::new();
-        if self.hdr {
-            if !cmd.contains("PROTON_ENABLE_WAYLAND=1") {
-                missing.push("PROTON_ENABLE_WAYLAND=1");
-            }
-            if !cmd.contains("PROTON_ENABLE_HDR=1") {
-                missing.push("PROTON_ENABLE_HDR=1");
-            }
-            if !cmd.contains("DXVK_HDR=1") {
-                missing.push("DXVK_HDR=1");
-            }
+        if self.hdr && !cmd.contains("DXVK_HDR=1") {
+            missing.push("DXVK_HDR=1");
         }
         if self.proton_log && !cmd.contains("PROTON_LOG=1") {
             missing.push("PROTON_LOG=1");
         }
         if self.fsr && !cmd.contains("FSR4_UPGRADE=1") {
             missing.push("FSR4_UPGRADE=1");
+        }
+        // Gamescope après les env, avant le reste (sans HDR bureau).
+        if self.hdr && !cmd.contains("--hdr-enabled") {
+            missing.push("gamescope -f --hdr-enabled --");
         }
         if missing.is_empty() {
             return if cmd.is_empty() {
@@ -226,10 +223,10 @@ mod tests {
             ..LaunchTweaks::default()
         };
         let c = t.merge_into_command("mangohud %command%");
-        assert!(c.starts_with("PROTON_ENABLE_WAYLAND=1"));
-        assert!(c.contains("PROTON_ENABLE_HDR=1"));
-        assert!(c.contains("DXVK_HDR=1"));
+        assert!(c.starts_with("DXVK_HDR=1"));
+        assert!(c.contains("gamescope -f --hdr-enabled --"));
         assert!(c.contains("mangohud"));
+        assert!(!c.contains("PROTON_ENABLE_WAYLAND"));
     }
 
     #[test]
@@ -240,12 +237,10 @@ mod tests {
             proton_log: true,
             ..LaunchTweaks::default()
         };
-        let base =
-            "PROTON_ENABLE_WAYLAND=1 PROTON_ENABLE_HDR=1 DXVK_HDR=1 mangohud %command%";
+        let base = "DXVK_HDR=1 gamescope -f --hdr-enabled -- mangohud %command%";
         let c = t.merge_into_command(base);
-        assert_eq!(c.matches("PROTON_ENABLE_WAYLAND=1").count(), 1);
-        assert_eq!(c.matches("PROTON_ENABLE_HDR=1").count(), 1);
         assert_eq!(c.matches("DXVK_HDR=1").count(), 1);
+        assert_eq!(c.matches("--hdr-enabled").count(), 1);
         assert!(c.contains("FSR4_UPGRADE=1"));
         assert!(c.contains("PROTON_LOG=1"));
         assert!(c.contains("mangohud"));
