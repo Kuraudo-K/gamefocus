@@ -106,6 +106,8 @@ impl LaunchTweaks {
     pub fn env_prefix(&self) -> String {
         let mut parts = Vec::new();
         if self.hdr {
+            // Wayland natif requis hors gamescope (surtout KDE / Proton-GE).
+            parts.push("PROTON_ENABLE_WAYLAND=1");
             parts.push("PROTON_ENABLE_HDR=1");
             parts.push("DXVK_HDR=1");
         }
@@ -124,6 +126,9 @@ impl LaunchTweaks {
         let cmd = command.trim();
         let mut missing = Vec::new();
         if self.hdr {
+            if !cmd.contains("PROTON_ENABLE_WAYLAND=1") {
+                missing.push("PROTON_ENABLE_WAYLAND=1");
+            }
             if !cmd.contains("PROTON_ENABLE_HDR=1") {
                 missing.push("PROTON_ENABLE_HDR=1");
             }
@@ -221,7 +226,8 @@ mod tests {
             ..LaunchTweaks::default()
         };
         let c = t.merge_into_command("mangohud %command%");
-        assert!(c.starts_with("PROTON_ENABLE_HDR=1"));
+        assert!(c.starts_with("PROTON_ENABLE_WAYLAND=1"));
+        assert!(c.contains("PROTON_ENABLE_HDR=1"));
         assert!(c.contains("DXVK_HDR=1"));
         assert!(c.contains("mangohud"));
     }
@@ -234,8 +240,10 @@ mod tests {
             proton_log: true,
             ..LaunchTweaks::default()
         };
-        let base = "PROTON_ENABLE_HDR=1 DXVK_HDR=1 mangohud %command%";
+        let base =
+            "PROTON_ENABLE_WAYLAND=1 PROTON_ENABLE_HDR=1 DXVK_HDR=1 mangohud %command%";
         let c = t.merge_into_command(base);
+        assert_eq!(c.matches("PROTON_ENABLE_WAYLAND=1").count(), 1);
         assert_eq!(c.matches("PROTON_ENABLE_HDR=1").count(), 1);
         assert_eq!(c.matches("DXVK_HDR=1").count(), 1);
         assert!(c.contains("FSR4_UPGRADE=1"));

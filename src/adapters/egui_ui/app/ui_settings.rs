@@ -234,8 +234,15 @@ impl GameFocusApp {
                             .show(ui, |ui| {
                                 widgets::on_off_row(
                                     ui,
-                                    "HDR - écran compatible",
+                                    "HDR (Wayland + Proton/DXVK)",
                                     &mut self.config.launch.hdr,
+                                );
+                                ui.label(
+                                    egui::RichText::new(
+                                        "KDE : active HDR sur l’écran jeu + SDR max ~200–250 nits.",
+                                    )
+                                    .small()
+                                    .color(theme::muted()),
                                 );
                                 ui.separator();
                                 widgets::on_off_row(
