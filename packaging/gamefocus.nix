@@ -6,8 +6,8 @@ let
   src = pkgs.fetchFromGitHub {
     owner = "Kuraudo-K";
     repo = "gamefocus";
-    rev = "4859116c8cd3f8cbaba7409e203cadf69057abda";
-    hash = "sha256-AiPGc2Uo6BVoD9WFvGBELHm9/Mvuz7VEHOjIhbnssyY=";
+    rev = "bb34f9273b9a8acce97bb6e80e50e5a60021cd97";
+    hash = "sha256-3mhWmmUIZaQyTiMyCZqNwRdZL1L+qXYeRm0vI41xw0c=";
   };
 
   runtimeLibs = with pkgs; [
