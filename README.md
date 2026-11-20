@@ -61,6 +61,22 @@ cargo build --release
 ./target/release/gamefocus
 ```
 
+Icône menu (build local seulement) :
+
+```bash
+./packaging/install-user-entry.sh
+```
+
+Si Plasma dit qu’il ne trouve pas `~/.local/bin/gamefocus` alors que Nix
+installe déjà l’appli : retire l’ancien lanceur local, puis relance le menu.
+
+```bash
+rm -f ~/.local/bin/gamefocus \
+      ~/.local/share/applications/gamefocus.desktop \
+      ~/.local/share/applications/com.gamefocus.GameFocus.desktop
+update-desktop-database ~/.local/share/applications 2>/dev/null || true
+```
+
 ## Tests
 
 ```bash
