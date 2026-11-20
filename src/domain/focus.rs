@@ -2,7 +2,6 @@
 //!
 //! Rappel mémoire :
 //! - SIGSTOP (geler) : coupe CPU/IO, **garde** RAM + VRAM → reversible (SIGCONT).
-//! - stop/TERM : libère RAM/VRAM → pas de reprise « en place ».
 //! - drop_caches : libère surtout le *page cache* disque, pas la VRAM GPU.
 
 use std::collections::HashSet;
@@ -25,25 +24,10 @@ pub struct FocusRules {
     /// `sync` + tentative `drop_caches` (page cache RAM — pas la VRAM).
     #[serde(default)]
     pub drop_page_cache: bool,
-    /// Process à **arrêter** (TERM) pour rendre la VRAM — pas gelés.
-    #[serde(default = "default_stop_for_vram")]
-    pub stop_for_vram: Vec<String>,
-    /// Process à arrêter proprement (TERM) pour rendre leur RAM — pas gelés.
-    #[serde(default)]
-    pub stop_for_ram: Vec<String>,
 }
 
 fn default_true() -> bool {
     true
-}
-
-fn default_stop_for_vram() -> Vec<String> {
-    vec![
-        "ollama".into(),
-        "ollama_llama_server".into(),
-        "comfyui".into(),
-        "stable-diffusion".into(),
-    ]
 }
 
 impl Default for FocusRules {
@@ -55,8 +39,6 @@ impl Default for FocusRules {
             pause_wallpapers: true,
             aggressive: true,
             drop_page_cache: false,
-            stop_for_vram: default_stop_for_vram(),
-            stop_for_ram: vec![],
         }
     }
 }
@@ -467,16 +449,10 @@ pub fn effective_suspend_set(rules: &FocusRules) -> HashSet<String> {
 pub fn select_focus_targets(process_names: &[(u32, &str)], rules: &FocusRules) -> Vec<u32> {
     let keep = normalize_set(&rules.keep);
     let targets = effective_suspend_set(rules);
-    let vram_stop = normalize_set(&rules.stop_for_vram);
-    let ram_stop = normalize_set(&rules.stop_for_ram);
     let mut out = Vec::new();
     for (pid, name) in process_names {
         let n = name.to_lowercase();
         if is_critical_process(&n) || matches_any(&n, &keep) || n == "gamefocus" {
-            continue;
-        }
-        // Les cibles VRAM sont stoppées ailleurs, pas listées comme « gel ».
-        if matches_any(&n, &vram_stop) || matches_any(&n, &ram_stop) {
             continue;
         }
         if matches_any(&n, &targets) {
@@ -491,68 +467,6 @@ pub fn select_focus_targets(process_names: &[(u32, &str)], rules: &FocusRules) -
         }
     }
     out
-}
-
-/// PIDs qui seraient stoppés pour VRAM (pas gelés).
-/// Exclut keep / critique / déjà listés en stop_for_ram (listes exclusives).
-pub fn select_vram_stop_targets(process_names: &[(u32, &str)], rules: &FocusRules) -> Vec<u32> {
-    let keep = normalize_set(&rules.keep);
-    let vram_stop = normalize_set(&rules.stop_for_vram);
-    let ram_stop = normalize_set(&rules.stop_for_ram);
-    let mut out = Vec::new();
-    for (pid, name) in process_names {
-        let n = name.to_lowercase();
-        if is_critical_process(&n) || matches_any(&n, &keep) || matches_any(&n, &ram_stop) {
-            continue;
-        }
-        if matches_any(&n, &vram_stop) {
-            out.push(*pid);
-        }
-    }
-    out
-}
-
-/// PIDs qui seraient arrêtés proprement pour rendre la RAM.
-/// Exclut keep / critique / déjà listés en stop_for_vram (listes exclusives).
-pub fn select_ram_stop_targets(process_names: &[(u32, &str)], rules: &FocusRules) -> Vec<u32> {
-    let keep = normalize_set(&rules.keep);
-    let ram_stop = normalize_set(&rules.stop_for_ram);
-    let vram_stop = normalize_set(&rules.stop_for_vram);
-    let mut out = Vec::new();
-    for (pid, name) in process_names {
-        let n = name.to_lowercase();
-        if is_critical_process(&n) || matches_any(&n, &keep) || matches_any(&n, &vram_stop) {
-            continue;
-        }
-        if matches_any(&n, &ram_stop) {
-            out.push(*pid);
-        }
-    }
-    out
-}
-
-/// Nettoie les doublons entre gel / RAM / VRAM (un process = une seule action).
-pub fn dedupe_focus_action_lists(rules: &mut FocusRules) {
-    let keep = normalize_set(&rules.keep);
-    rules
-        .stop_for_vram
-        .retain(|n| !keep.iter().any(|k| process_name_matches(n, k)) && !is_critical_process(n));
-    rules
-        .stop_for_ram
-        .retain(|n| !keep.iter().any(|k| process_name_matches(n, k)) && !is_critical_process(n));
-    // VRAM gagne sur RAM si présent dans les deux
-    let vram = normalize_set(&rules.stop_for_vram);
-    rules
-        .stop_for_ram
-        .retain(|n| !vram.iter().any(|v| process_name_matches(n, v)));
-    let memory = {
-        let mut s = normalize_set(&rules.stop_for_vram);
-        s.extend(normalize_set(&rules.stop_for_ram));
-        s
-    };
-    rules
-        .suspend
-        .retain(|n| !memory.iter().any(|m| process_name_matches(n, m)));
 }
 
 #[cfg(test)]
@@ -594,31 +508,12 @@ mod tests {
     }
 
     #[test]
-    fn ollama_is_vram_stop_not_freeze() {
-        let rules = FocusRules::default();
-        let procs = [(80u32, "ollama"), (20, "firefox")];
-        assert!(!select_focus_targets(&procs, &rules).contains(&80));
-        assert!(select_vram_stop_targets(&procs, &rules).contains(&80));
-        assert!(select_focus_targets(&procs, &rules).contains(&20));
-    }
-
-    #[test]
-    fn ram_and_vram_lists_are_exclusive() {
+    fn ollama_is_frozen_when_listed_in_suspend() {
         let mut rules = FocusRules::default();
-        rules.stop_for_vram = vec!["firefox".into()];
-        rules.stop_for_ram = vec!["firefox".into(), "chrome".into()];
-        rules.suspend = vec!["firefox".into(), "slack".into()];
-        dedupe_focus_action_lists(&mut rules);
-        assert!(rules.stop_for_vram.iter().any(|n| n == "firefox"));
-        assert!(!rules.stop_for_ram.iter().any(|n| n == "firefox"));
-        assert!(rules.stop_for_ram.iter().any(|n| n == "chrome"));
-        assert!(!rules.suspend.iter().any(|n| n == "firefox"));
-        assert!(rules.suspend.iter().any(|n| n == "slack"));
-        let procs = [(1u32, "firefox"), (2, "chrome")];
-        assert!(select_vram_stop_targets(&procs, &rules).contains(&1));
-        assert!(!select_ram_stop_targets(&procs, &rules).contains(&1));
-        assert!(select_ram_stop_targets(&procs, &rules).contains(&2));
-        assert!(!select_vram_stop_targets(&procs, &rules).contains(&2));
+        rules.suspend.push("ollama".into());
+        let procs = [(80u32, "ollama"), (20, "firefox")];
+        assert!(select_focus_targets(&procs, &rules).contains(&80));
+        assert!(select_focus_targets(&procs, &rules).contains(&20));
     }
 
     #[test]
@@ -638,24 +533,6 @@ mod tests {
         rules.suspend.clear();
         let procs = [(70u32, "nautilus"), (71, "code")];
         assert!(select_focus_targets(&procs, &rules).is_empty());
-    }
-
-    #[test]
-    fn critical_graphics_processes_are_protected_for_memory_stop() {
-        let mut rules = FocusRules::default();
-        rules.stop_for_vram = vec![
-            ".gnome-shell-wr".into(),
-            "kwin_wayland".into(),
-            "plasmashell".into(),
-        ];
-        rules.stop_for_ram = rules.stop_for_vram.clone();
-        let procs = [
-            (10u32, ".gnome-shell-wr"),
-            (11, "kwin_wayland"),
-            (12, "plasmashell"),
-        ];
-        assert!(select_vram_stop_targets(&procs, &rules).is_empty());
-        assert!(select_ram_stop_targets(&procs, &rules).is_empty());
     }
 
     #[test]

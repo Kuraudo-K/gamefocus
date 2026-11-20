@@ -12,6 +12,8 @@ use super::{
     remove_managed_arguments, split_launch_tokens, GAMEFOCUS_GAME_ARGUMENT_PREFIX,
 };
 
+const GAMEFOCUS_WRAPPER_PREFIX: &str = "__gamefocus_wrapper__:";
+
 // ── apply / clear / read / preview ──────────────────────────────────────────
 
 pub(super) fn apply_heroic(game: &GameEntry, cmd: &str) -> Result<(String, Vec<String>), String> {
@@ -119,12 +121,28 @@ fn merge_heroic_entry(entry: &mut Value, requested: &str) -> Result<(String, Vec
         .ok_or_else(|| "Entrée jeu Heroic invalide.".to_string())?;
     let mut managed = Vec::new();
     let env_key = "enviromentOptions";
-    for token in before_command {
-        match token.as_str() {
+    let mut index = 0usize;
+    while index < before_command.len() {
+        let token = before_command[index].as_str();
+        if token == "gamescope" {
+            let mut args = Vec::new();
+            index += 1;
+            while index < before_command.len() && before_command[index] != "--" {
+                args.push(before_command[index].clone());
+                index += 1;
+            }
+            if index < before_command.len() && before_command[index] == "--" {
+                index += 1;
+            }
+            let args = args.join(" ");
+            merge_gamescope_wrapper(entry, &args, &mut managed)?;
+            continue;
+        }
+        match token {
             "gamemoderun" => {
                 if entry.get("useGameMode").and_then(Value::as_bool) != Some(true) {
                     entry.insert("useGameMode".into(), json!(true));
-                    managed.push(token);
+                    managed.push(token.to_string());
                 }
             }
             "mangohud" => {
@@ -136,7 +154,7 @@ fn merge_heroic_entry(entry: &mut Value, requested: &str) -> Result<(String, Vec
                 };
                 if entry.get(field).and_then(Value::as_bool) != Some(true) {
                     entry.insert(field.into(), json!(true));
-                    managed.push(token);
+                    managed.push(token.to_string());
                 }
             }
             assignment if environment_assignment(assignment).is_some() => {
@@ -156,7 +174,17 @@ fn merge_heroic_entry(entry: &mut Value, requested: &str) -> Result<(String, Vec
                     }
                 } else {
                     env.push(json!({ "key": name, "value": value }));
-                    managed.push(token);
+                    managed.push(token.to_string());
+                }
+                if (name == "DXVK_HDR" || name == "PROTON_ENABLE_HDR") && value == "1"
+                    && entry.get("enableHDR").and_then(Value::as_bool) != Some(true)
+                {
+                    entry.insert("enableHDR".into(), json!(true));
+                }
+                if name == "PROTON_ENABLE_WAYLAND" && value == "1"
+                    && entry.get("enableWineWayland").and_then(Value::as_bool) != Some(true)
+                {
+                    entry.insert("enableWineWayland".into(), json!(true));
                 }
             }
             unsupported => {
@@ -165,6 +193,7 @@ fn merge_heroic_entry(entry: &mut Value, requested: &str) -> Result<(String, Vec
                 ));
             }
         }
+        index += 1;
     }
     let current_args = entry
         .get("launcherArgs")
@@ -239,6 +268,39 @@ fn clear_heroic_entry(entry: &mut Value, managed: &[String]) -> Result<bool, Str
             entry.insert("launcherArgs".into(), json!(remaining));
             changed = true;
         }
+    }
+    for token in managed {
+        let Some(rest) = token.strip_prefix(GAMEFOCUS_WRAPPER_PREFIX) else {
+            continue;
+        };
+        let Some((exe, args)) = rest.split_once(':') else {
+            continue;
+        };
+        if let Some(wrappers) = entry.get_mut("wrapperOptions").and_then(Value::as_array_mut) {
+            let before = wrappers.len();
+            wrappers.retain(|wrapper| {
+                wrapper.get("exe").and_then(Value::as_str) != Some(exe)
+                    || wrapper.get("args").and_then(Value::as_str) != Some(args)
+            });
+            if wrappers.len() != before {
+                changed = true;
+            }
+            if wrappers.is_empty() {
+                entry.remove("wrapperOptions");
+            }
+        }
+    }
+    if managed.iter().any(|token| token.as_str() == "DXVK_HDR=1" || token.as_str() == "PROTON_ENABLE_HDR=1")
+        && entry.get("enableHDR").and_then(Value::as_bool) == Some(true)
+    {
+        entry.insert("enableHDR".into(), json!(false));
+        changed = true;
+    }
+    if managed.iter().any(|token| token.as_str() == "PROTON_ENABLE_WAYLAND=1")
+        && entry.get("enableWineWayland").and_then(Value::as_bool) == Some(true)
+    {
+        entry.insert("enableWineWayland".into(), json!(false));
+        changed = true;
     }
     if let Some(env) = entry.get("enviromentOptions").and_then(Value::as_array) {
         if env.is_empty() {
@@ -327,6 +389,21 @@ fn heroic_entry_command(entry: &Value) -> Result<String, String> {
         .as_object()
         .ok_or_else(|| "Entrée Heroic invalide.".to_string())?;
     let mut options = Vec::new();
+    if let Some(wrappers) = object.get("wrapperOptions").and_then(Value::as_array) {
+        for wrapper in wrappers {
+            let exe = wrapper
+                .get("exe")
+                .and_then(Value::as_str)
+                .unwrap_or("gamescope");
+            let args = wrapper.get("args").and_then(Value::as_str).unwrap_or_default();
+            if args.is_empty() {
+                options.push(exe.to_string());
+            } else {
+                options.push(format!("{exe} {args}"));
+            }
+            options.push("--".to_string());
+        }
+    }
     if object.get("useGameMode").and_then(Value::as_bool) == Some(true) {
         options.push("gamemoderun".to_string());
     }
@@ -366,6 +443,37 @@ fn heroic_entry_command(entry: &Value) -> Result<String, String> {
         options.push("%command%".into());
     }
     Ok(options.join(" "))
+}
+
+fn merge_gamescope_wrapper(
+    entry: &mut serde_json::Map<String, Value>,
+    args: &str,
+    managed: &mut Vec<String>,
+) -> Result<(), String> {
+    let wrappers = entry
+        .entry("wrapperOptions")
+        .or_insert_with(|| json!([]));
+    let wrappers = wrappers.as_array_mut().ok_or_else(|| {
+        "wrapperOptions Heroic invalide; rien n'a été modifié.".to_string()
+    })?;
+    let marker = format!("{GAMEFOCUS_WRAPPER_PREFIX}gamescope:{args}");
+    if let Some(existing) = wrappers
+        .iter()
+        .find(|wrapper| wrapper.get("exe").and_then(Value::as_str) == Some("gamescope"))
+    {
+        if existing.get("args").and_then(Value::as_str) != Some(args) {
+            return Err(format!(
+                "Heroic contient déjà gamescope avec d'autres arguments; ils sont conservés."
+            ));
+        }
+        if !managed.contains(&marker) {
+            managed.push(marker);
+        }
+        return Ok(());
+    }
+    wrappers.push(json!({ "exe": "gamescope", "args": args }));
+    managed.push(marker);
+    Ok(())
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
@@ -448,5 +556,41 @@ mod tests {
         assert!(reactivated.contains(&"gamemoderun".to_string()));
         assert!(reactivated.contains(&"mangohud".to_string()));
         assert!(reactivated.contains(&"__gamefocus_game_argument__:--test".to_string()));
+    }
+
+    #[test]
+    fn heroic_maps_hdr_gamescope_to_native_fields() {
+        let mut entry = json!({
+            "appName": "Cyberpunk",
+            "useGameMode": false
+        });
+        let (merged, managed) = merge_heroic_entry(
+            &mut entry,
+            "DXVK_HDR=1 PROTON_ENABLE_HDR=1 PROTON_ENABLE_WAYLAND=1 gamescope -f --hdr-enabled -- %command%",
+        )
+        .unwrap();
+        assert!(entry["enableHDR"].as_bool().unwrap());
+        assert!(entry["enableWineWayland"].as_bool().unwrap());
+        assert_eq!(entry["wrapperOptions"][0]["exe"], "gamescope");
+        assert_eq!(
+            entry["wrapperOptions"][0]["args"].as_str(),
+            Some("-f --hdr-enabled")
+        );
+        assert!(managed.iter().any(|token| token.contains("gamescope")));
+        assert!(managed.iter().any(|token| token == "DXVK_HDR=1"));
+        assert!(merged.contains("gamescope"));
+        assert!(merged.contains("DXVK_HDR=1"));
+
+        assert!(clear_heroic_entry(&mut entry, &managed).unwrap());
+        assert_eq!(entry.get("wrapperOptions"), None);
+        assert_eq!(entry.get("enableHDR").and_then(Value::as_bool), Some(false));
+        assert_eq!(
+            entry.get("enableWineWayland").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert!(entry
+            .get("enviromentOptions")
+            .and_then(Value::as_array)
+            .is_none_or(|env| env.is_empty()));
     }
 }

@@ -8,10 +8,9 @@ pub mod proton;
 
 pub use config::{AppConfig, LaunchTweaks, ThemeMode};
 pub use focus::{
-    aggressive_extra_targets, dedupe_focus_action_lists, is_critical_process, process_name_matches,
-    select_focus_targets, select_ram_stop_targets, select_vram_stop_targets, wallpaper_process_names,
-    FocusAction, FocusRules, FocusSession, FocusSnapshot, PausedProcessIdentity,
-    WallpaperRestartCommand,
+    aggressive_extra_targets, is_critical_process, process_name_matches, select_focus_targets,
+    wallpaper_process_names, FocusAction, FocusRules, FocusSession, FocusSnapshot,
+    PausedProcessIdentity, WallpaperRestartCommand,
 };
 pub use game::{
     steamish_app_id, GameEntry, GameSource, GridCoverSize, ListCoverSize, RunningApp, SortMode,

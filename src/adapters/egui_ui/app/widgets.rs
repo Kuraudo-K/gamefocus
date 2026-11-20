@@ -49,15 +49,6 @@ pub(super) fn launch_options_row(ui: &mut egui::Ui, label: &str, value: &str) {
     });
 }
 
-pub(super) fn format_memory_bytes(bytes: u64) -> String {
-    let mib = 1024 * 1024;
-    if bytes >= mib {
-        format!("{}.{:01} MiB", bytes / mib, (bytes % mib) * 10 / mib)
-    } else {
-        format!("{} KiB", bytes / 1024)
-    }
-}
-
 pub(super) fn btn(ui: &mut egui::Ui, label: &str, fill: Color32) -> egui::Response {
     let on_acc = fill == theme::acc() || fill == theme::acc_dim();
     let text = if fill == theme::panel() {

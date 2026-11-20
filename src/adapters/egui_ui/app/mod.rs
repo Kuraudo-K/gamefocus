@@ -10,10 +10,7 @@ use egui::{
 
 use crate::adapters::covers::CoverCache;
 use crate::adapters::egui_ui::desktop::{DesktopCommand, DesktopCommandSender};
-use crate::adapters::process_list::{
-    is_listed, list_running_apps, list_running_resource_apps, memory_status,
-    preview_focus_targets, MemoryStatus, RunningResourceApp,
-};
+use crate::adapters::process_list::{is_listed, list_running_apps, preview_focus_targets};
 use crate::adapters::proton_tools::{list_proton_tools, ProtonTool};
 use crate::application::GameFocusService;
 use crate::domain::{
@@ -72,7 +69,6 @@ enum SettingsTab {
     Launch,
     Keep,
     Suspend,
-    Memory,
     Running,
 }
 
@@ -99,9 +95,6 @@ pub struct GameFocusApp {
     covers: CoverCache,
     running: Vec<RunningApp>,
     running_ms: u128,
-    resource_apps: Vec<RunningResourceApp>,
-    resource_scan_ms: u128,
-    memory_status: MemoryStatus,
     focus_preview_list: Vec<RunningApp>,
     new_keep: String,
     new_suspend: String,
@@ -175,9 +168,6 @@ impl GameFocusApp {
             covers: CoverCache::with_resolver(steam_ids),
             running,
             running_ms,
-            resource_apps: vec![],
-            resource_scan_ms: 0,
-            memory_status: MemoryStatus::default(),
             focus_preview_list: vec![],
             new_keep: String::new(),
             new_suspend: String::new(),
@@ -224,23 +214,6 @@ impl GameFocusApp {
         self.running_ms = ms;
         self.running = running;
         self.status = format!("Applis en fond : {} ({} ms)", self.running.len(), ms);
-        self.error = false;
-    }
-
-    fn refresh_resource_processes(&mut self) {
-        let (apps, ms) = list_running_resource_apps();
-        self.resource_scan_ms = ms;
-        self.resource_apps = apps;
-        self.memory_status = memory_status();
-        self.status = if self.resource_apps.is_empty() {
-            format!("Aucun processus avec mémoire mesurable ({} ms).", ms)
-        } else {
-            format!(
-                "{} processus avec RAM ou VRAM mesurable ({} ms).",
-                self.resource_apps.len(),
-                ms
-            )
-        };
         self.error = false;
     }
 
@@ -718,14 +691,6 @@ impl GameFocusApp {
             .focus
             .suspend
             .retain(|s| !s.eq_ignore_ascii_case(&n));
-        self.config
-            .focus
-            .stop_for_ram
-            .retain(|s| !s.eq_ignore_ascii_case(&n));
-        self.config
-            .focus
-            .stop_for_vram
-            .retain(|s| !s.eq_ignore_ascii_case(&n));
         self.save_settings();
         self.status = format!("Exception : « {n} » ne sera pas gelé.");
     }
@@ -740,15 +705,6 @@ impl GameFocusApp {
             self.error = true;
             return;
         }
-        // Exclusif : geler ≠ stop RAM/VRAM (évite double action sur le même process)
-        self.config
-            .focus
-            .stop_for_ram
-            .retain(|s| !s.eq_ignore_ascii_case(&n));
-        self.config
-            .focus
-            .stop_for_vram
-            .retain(|s| !s.eq_ignore_ascii_case(&n));
         if !self
             .config
             .focus
@@ -759,66 +715,7 @@ impl GameFocusApp {
             self.config.focus.suspend.push(n.clone());
         }
         self.save_settings();
-        self.status = format!("« {n} » sera gelé en Focus (retiré des listes RAM/VRAM).");
-    }
-
-    fn add_to_vram_stop(&mut self, name: &str) {
-        self.add_to_memory_stop(name, false);
-    }
-
-    fn add_to_ram_stop(&mut self, name: &str) {
-        self.add_to_memory_stop(name, true);
-    }
-
-    fn add_to_memory_stop(&mut self, name: &str, ram: bool) {
-        let n = name.trim().to_lowercase();
-        if n.is_empty() {
-            return;
-        }
-        if is_listed(&n, &self.config.focus.keep) || is_critical_process(&n) {
-            self.status = format!("« {n} » est protégé et ne sera pas arrêté.");
-            self.error = true;
-            return;
-        }
-        // Blocklists séparées et exclusives : un process = RAM OU VRAM OU gel, pas les deux
-        self.config
-            .focus
-            .suspend
-            .retain(|s| !s.eq_ignore_ascii_case(&n));
-        if ram {
-            self.config
-                .focus
-                .stop_for_vram
-                .retain(|s| !s.eq_ignore_ascii_case(&n));
-        } else {
-            self.config
-                .focus
-                .stop_for_ram
-                .retain(|s| !s.eq_ignore_ascii_case(&n));
-        }
-        let targets = if ram {
-            &mut self.config.focus.stop_for_ram
-        } else {
-            &mut self.config.focus.stop_for_vram
-        };
-        if !targets.iter().any(|saved| saved.eq_ignore_ascii_case(&n)) {
-            targets.push(n.clone());
-        }
-        self.config.last_search = self.search.clone();
-        match self.service.save_config(&self.config) {
-            Ok(()) => {
-                let resource = if ram { "RAM" } else { "VRAM" };
-                let other = if ram { "VRAM" } else { "RAM" };
-                self.status = format!(
-                    "« {n} » → libérer {resource} (retiré gel / {other})."
-                );
-                self.error = false;
-            }
-            Err(error) => {
-                self.status = format!("Sauvegarde mémoire : {error}");
-                self.error = true;
-            }
-        }
+        self.status = format!("« {n} » sera gelé en Focus.");
     }
 }
 

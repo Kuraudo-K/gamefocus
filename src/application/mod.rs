@@ -63,15 +63,11 @@ impl GameFocusService {
     }
 
     pub fn load_config(&self) -> AppConfig {
-        let mut cfg = self.config.load().unwrap_or_default();
-        crate::domain::dedupe_focus_action_lists(&mut cfg.focus);
-        cfg
+        self.config.load().unwrap_or_default()
     }
 
     pub fn save_config(&self, cfg: &AppConfig) -> Result<(), String> {
-        let mut cleaned = cfg.clone();
-        crate::domain::dedupe_focus_action_lists(&mut cleaned.focus);
-        self.config.save(&cleaned)
+        self.config.save(cfg)
     }
 
     /// Scanne toutes les bibliothèques branchées et déduplique.

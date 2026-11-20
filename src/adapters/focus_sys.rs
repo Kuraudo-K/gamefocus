@@ -1,7 +1,6 @@
 //! Mode Focus via sysinfo (SIGSTOP/SIGCONT) + systemctl user.
 //!
 //! - **Geler** = SIGSTOP (CPU off, RAM/VRAM gardées) → SIGCONT à l’arrêt.
-//! - **stop_for_vram / stop_for_ram** = TERM, puis relance à la sortie du Focus.
 //! - **drop_page_cache** = sync + tentative drop_caches (page cache, pas GPU).
 
 use std::collections::{HashMap, HashSet};
@@ -13,14 +12,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use sysinfo::{Pid, Process, ProcessStatus, ProcessesToUpdate, Signal, System, ThreadKind};
 
 use crate::adapters::config_json::JsonConfigStore;
-use crate::adapters::process_list::{
-    current_uid, list_vram_by_pid, process_protection_reason, MIN_RAM_RELEASE_BYTES,
-};
 use crate::domain::focus::{matches_any, normalize_set};
 use crate::domain::{
-    is_critical_process, select_focus_targets, select_ram_stop_targets, select_vram_stop_targets,
-    wallpaper_process_names, FocusAction, FocusRules, FocusSession, FocusSnapshot,
-    PausedProcessIdentity, WallpaperRestartCommand,
+    is_critical_process, select_focus_targets, wallpaper_process_names, FocusAction, FocusRules,
+    FocusSession, FocusSnapshot, PausedProcessIdentity, WallpaperRestartCommand,
 };
 use crate::ports::FocusController;
 
@@ -260,28 +255,13 @@ impl FocusController for SysFocusController {
         };
         let keep = normalize_set(&self.rules.keep);
         let targets = crate::domain::focus::effective_suspend_set(&self.rules);
-        let vram_stop = normalize_set(&self.rules.stop_for_vram);
-        let ram_stop = normalize_set(&self.rules.stop_for_ram);
         let mut wallpapers = Vec::new();
-        let mut skipped_memory_targets = 0usize;
-        let mut vram_killed = if already {
-            self.snapshot.vram_stopped_pids.clone()
-        } else {
-            Vec::new()
-        };
-        let mut ram_stopped = if already {
-            self.snapshot.ram_stopped_pids.clone()
-        } else {
-            Vec::new()
-        };
         let mut dropped_cache = already && self.snapshot.dropped_page_cache;
 
         if let Some(ref fake) = self.fake_processes {
             if !already {
                 let refs: Vec<(u32, &str)> = fake.iter().map(|(p, n)| (*p, n.as_str())).collect();
                 suspended = select_focus_targets(&refs, &self.rules);
-                vram_killed = select_vram_stop_targets(&refs, &self.rules);
-                ram_stopped = select_ram_stop_targets(&refs, &self.rules);
             }
             if self.rules.pause_wallpapers {
                 for (_pid, name) in fake {
@@ -297,14 +277,12 @@ impl FocusController for SysFocusController {
         } else {
             let mut sys = System::new();
             sys.refresh_processes(ProcessesToUpdate::All, true);
-            let vram_by_pid = list_vram_by_pid();
 
             let debug = std::env::var("GAMEFOCUS_DEBUG").ok().as_deref() == Some("1");
             let mut debug_samples = 0usize;
 
             // parent_pid → children (pour geler l’arbre)
             let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
-            let session_uid = current_uid();
             for (pid, proc_) in sys.processes() {
                 if let Some(pp) = proc_.parent() {
                     children.entry(pp.as_u32()).or_default().push(pid.as_u32());
@@ -344,63 +322,6 @@ impl FocusController for SysFocusController {
 
                     let pid_u = pid.as_u32();
 
-                    let stop_for_vram =
-                        matches_any(&name_base, &vram_stop) || matches_any(&exe, &vram_stop);
-                    let stop_for_ram =
-                        matches_any(&name_base, &ram_stop) || matches_any(&exe, &ram_stop);
-                    if stop_for_vram || stop_for_ram {
-                        let has_vram = vram_by_pid.get(&pid_u).copied().unwrap_or_default() > 0;
-                        let has_ram = proc_.memory() >= MIN_RAM_RELEASE_BYTES;
-                        let release_vram = stop_for_vram && has_vram;
-                        let release_ram = stop_for_ram && has_ram;
-                        let can_term = release_vram || release_ram;
-                        let protected = process_protection_reason(
-                            pid_u,
-                            &name_base,
-                            proc_.exe(),
-                            session_uid,
-                        )
-                        .is_some()
-                            || proc_.exe().is_none();
-
-                        if can_term && !protected {
-                            if self.dry_run {
-                                if release_vram {
-                                    vram_killed.push(pid_u);
-                                }
-                                if release_ram {
-                                    ram_stopped.push(pid_u);
-                                }
-                                continue;
-                            }
-                            if proc_.kill_with(Signal::Term).unwrap_or(false) {
-                                self.track_process_restart(pid_u, proc_, true);
-                                if release_vram {
-                                    vram_killed.push(pid_u);
-                                }
-                                if release_ram {
-                                    ram_stopped.push(pid_u);
-                                }
-                                continue;
-                            }
-                            skipped_memory_targets += 1;
-                        } else {
-                            skipped_memory_targets += 1;
-                        }
-
-                        // Secours : geler (SIGSTOP) si TERM impossible (pas de VRAM
-                        // mesurée, RAM sous seuil, protégé, ou kill échoué).
-                        if self.dry_run {
-                            suspended.push(pid_u);
-                            continue;
-                        }
-                        if proc_.kill_with(Signal::Stop).unwrap_or(false) {
-                            suspended.push(pid_u);
-                        }
-                        continue;
-                    }
-
-                    // ------ Gel classique ------
                     if !(matches_any(&name_base, &targets) || matches_any(&exe, &targets)) {
                         continue;
                     }
@@ -424,30 +345,20 @@ impl FocusController for SysFocusController {
                 if !self.dry_run {
                     let roots: Vec<u32> = suspended.clone();
                     for root in roots {
-                        freeze_descendants(
-                            &sys,
-                            &children,
-                            root,
-                            &mut suspended,
-                            &keep,
-                            &vram_stop,
-                            &ram_stop,
-                        );
+                        freeze_descendants(&sys, &children, root, &mut suspended, &keep);
                     }
                 }
             }
 
             // Wallpapers : suspendre l’animation et mémoriser comment la relancer.
             if self.rules.pause_wallpapers {
+                let mut wallpaper_roots = Vec::new();
                 for (pid, proc_) in sys.processes() {
                     let name = proc_.name().to_string_lossy().to_lowercase();
                     if !is_wallpaper_process(proc_, &keep) {
                         continue;
                     }
                     let pid_u = pid.as_u32();
-                    if vram_killed.contains(&pid_u) || ram_stopped.contains(&pid_u) {
-                        continue;
-                    }
                     if suspended.contains(&pid_u) {
                         if !wallpapers.iter().any(|w| w == &name) {
                             wallpapers.push(name);
@@ -457,13 +368,20 @@ impl FocusController for SysFocusController {
                     }
                     if self.dry_run {
                         suspended.push(pid_u);
+                        wallpaper_roots.push(pid_u);
                         wallpapers.push(name);
                         continue;
                     }
                     if proc_.kill_with(Signal::Stop).unwrap_or(false) {
                         suspended.push(pid_u);
+                        wallpaper_roots.push(pid_u);
                         wallpapers.push(name);
                         self.track_process_restart(pid_u, proc_, false);
+                    }
+                }
+                if !self.dry_run {
+                    for root in wallpaper_roots {
+                        freeze_descendants(&sys, &children, root, &mut suspended, &keep);
                     }
                 }
             }
@@ -496,10 +414,6 @@ impl FocusController for SysFocusController {
 
         suspended.sort_unstable();
         suspended.dedup();
-        vram_killed.sort_unstable();
-        vram_killed.dedup();
-        ram_stopped.sort_unstable();
-        ram_stopped.dedup();
 
         let focus_started_at_unix_secs = if already {
             self.snapshot
@@ -522,8 +436,8 @@ impl FocusController for SysFocusController {
                 .collect(),
             wallpaper_restart_commands: self.wallpaper_restarts.clone(),
             focus_started_at_unix_secs,
-            vram_stopped_pids: vram_killed.clone(),
-            ram_stopped_pids: ram_stopped.clone(),
+            vram_stopped_pids: vec![],
+            ram_stopped_pids: vec![],
             active: true,
             dropped_page_cache: dropped_cache,
         };
@@ -532,17 +446,11 @@ impl FocusController for SysFocusController {
         }
         self.persist_snapshot()?;
 
-        let stopped_processes: HashSet<_> =
-            vram_killed.iter().chain(&ram_stopped).copied().collect();
         let mut message = format!(
-            "Focus ON — {} gelés · {} arrêt(s) demandé(s) · {} service(s) arrêté(s)",
+            "Focus ON — {} gelés · {} service(s) arrêté(s)",
             suspended.len(),
-            stopped_processes.len(),
             stopped_services.len()
         );
-        if skipped_memory_targets > 0 {
-            message.push_str(&format!(" · {skipped_memory_targets} cible(s) ignorée(s)"));
-        }
         if dropped_cache {
             message.push_str(" · cache disque vidé");
         } else if self.rules.drop_page_cache && !already && !self.dry_run {
@@ -715,7 +623,9 @@ fn is_wallpaper_process(process: &Process, keep: &HashSet<String>) -> bool {
         || blob.contains("org.waywallen")
         || blob.contains("waywallen-video")
         || blob.contains("waywallen-wescene")
+        || blob.contains("waywallen-wesce")
         || blob.contains("linux-wallpaperengine")
+        || (blob.contains("gjs") && blob.contains("waywallen"))
 }
 
 fn freeze_descendants(
@@ -724,8 +634,6 @@ fn freeze_descendants(
     root: u32,
     suspended: &mut Vec<u32>,
     keep: &HashSet<String>,
-    vram_stop: &HashSet<String>,
-    ram_stop: &HashSet<String>,
 ) {
     let Some(kids) = children.get(&root) else {
         return;
@@ -739,11 +647,7 @@ fn freeze_descendants(
             continue;
         };
         let name = proc_.name().to_string_lossy().to_lowercase();
-        if is_critical_process(&name)
-            || matches_any(&name, keep)
-            || matches_any(&name, vram_stop)
-            || matches_any(&name, ram_stop)
-        {
+        if is_critical_process(&name) || matches_any(&name, keep) {
             continue;
         }
         if matches!(
@@ -754,7 +658,7 @@ fn freeze_descendants(
         }
         if proc_.kill_with(Signal::Stop).unwrap_or(false) {
             suspended.push(child);
-            freeze_descendants(sys, children, child, suspended, keep, vram_stop, ram_stop);
+            freeze_descendants(sys, children, child, suspended, keep);
         }
     }
 }
@@ -869,13 +773,13 @@ mod tests {
     }
 
     #[test]
-    fn dry_run_vram_stop_ollama() {
+    fn dry_run_freezes_firefox_not_unlisted_ollama() {
         let mut engine = SysFocusController::new(FocusRules::default())
             .dry_run(true)
             .with_fake_processes(vec![(80, "ollama".into()), (20, "firefox".into())]);
         let enter = engine.enter().unwrap();
         assert!(enter.suspended >= 1);
-        assert!(engine.snapshot().vram_stopped_pids.contains(&80));
         assert!(!engine.snapshot().suspended_pids.contains(&80));
+        assert!(engine.snapshot().suspended_pids.contains(&20));
     }
 }
