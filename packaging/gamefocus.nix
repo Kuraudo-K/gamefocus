@@ -14,8 +14,8 @@ let
   src = pkgs.fetchFromGitHub {
     owner = "Kuraudo-K";
     repo = "gamefocus";
-    rev = "main"; # ou un SHA de commit piné
-    hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="; # <- à remplacer
+    rev = "f7fa684dc803f5e9e1d7a0724c93541f520f3dd2";
+    hash = "sha256-LXt0hWQ49uMI3jt/uRIWrl1dYEaw5jseR+0fIoyPuUE=";
   };
 
   runtimeLibs = with pkgs; [
